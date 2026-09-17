@@ -1067,6 +1067,15 @@ test("workspace status reports failed and unready when storage is missing or uno
       return true;
     },
   );
+
+  await service.index({ rebuild: true });
+  const recovered = await service.info();
+  assert.equal(recovered.indexed, true);
+  assert.equal(recovered.error, undefined);
+  assert.equal(recovered.suggestion, undefined);
+  await runCli(["--status", root, "--mode", "direct", "--check-ready"], {
+    cwd: root,
+  });
 });
 
 test("workspace status reports failed when the manifest path no longer holds the index storage", async (t) => {
