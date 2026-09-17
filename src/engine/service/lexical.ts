@@ -1,11 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { relative } from "node:path";
-import {
-  isHostAbsolutePath,
-  resolvePath,
-  toDisplayPath,
-} from "../utils/path.js";
+import { isAbsolute, relative, resolve } from "node:path";
+import { toDisplayPath } from "../utils/path.js";
 import type {
   ZvecGrepContextItem,
   ZvecGrepSearchOptions,
@@ -283,7 +279,7 @@ function pathFilterArgs(
 
 function expandRipgrepPathGlob(pattern: string): string[] {
   const normalized = pattern.startsWith("./") ? pattern.slice(2) : pattern;
-  if (normalized.startsWith("**/") || isHostAbsolutePath(normalized)) {
+  if (normalized.startsWith("**/") || isAbsolute(normalized)) {
     return [normalized];
   }
 
@@ -342,7 +338,7 @@ function checkSearchPaths(
 }
 
 function resolveSearchPath(root: string, path: string): string {
-  return resolvePath(root, path);
+  return isAbsolute(path) ? path : resolve(root, path);
 }
 
 function runCommand(options: {
@@ -612,7 +608,7 @@ function parseRipgrepJsonLine(
 }
 
 function normalizeResultPath(root: string, path: string) {
-  const absolutePath = resolvePath(root, path);
+  const absolutePath = isAbsolute(path) ? resolve(path) : resolve(root, path);
 
   return {
     absolutePath,

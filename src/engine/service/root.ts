@@ -8,7 +8,6 @@ import {
   installWorkspaceIndexStorage,
 } from "../storage/index.js";
 import { workspaceIndexPath } from "../storage/layout.js";
-import { normalizePath } from "../utils/path.js";
 
 export const ZVEC_GREP_DIR = ".zvec-grep";
 export type WorkspaceIndexLocation = {
@@ -19,7 +18,7 @@ export type WorkspaceIndexLocation = {
 };
 
 export function resolveZvecGrepRoot(root: string | undefined): string {
-  return normalizePath(root ?? process.cwd());
+  return resolve(root ?? process.cwd());
 }
 
 export function workspaceHome(root: string): string {

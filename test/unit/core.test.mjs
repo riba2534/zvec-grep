@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve, win32 } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import {
   compatibilityWarningForArgs,
@@ -47,11 +47,8 @@ import {
   resolveFileTypePatterns,
 } from "../../dist/engine/utils/file-selection.js";
 import {
-  hasConcatenatedWindowsDrive,
   isPathInside,
-  isWindowsAbsolutePath,
   normalizePath,
-  resolvePath,
   toDisplayPath,
 } from "../../dist/engine/utils/path.js";
 import {
@@ -872,39 +869,39 @@ test("glob and path helpers cover literal, wildcard, and descendant matching", (
   assert.equal(toDisplayPath(parent).includes("\\"), false);
 });
 
-test("POSIX path helpers do not join Windows absolute paths onto a POSIX root", () => {
-  const posixRoot = "/home/user/CLAUDE/_bridges";
-  const windowsRoot = String.raw`C:\Users\user\project`;
-  const concatenated = `${posixRoot}/${windowsRoot}`;
+test(
+  "index roots reject Windows paths on POSIX without rejecting drive-like directories",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const temporaryDirectory = await mkdtemp(
+      join(tmpdir(), "zvec-grep-root-style-"),
+    );
+    t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+    const driveLikeDirectory = join(temporaryDirectory, "C:");
+    await mkdir(driveLikeDirectory);
+    const driveLikeFile = join(driveLikeDirectory, "x.ts");
+    await writeFile(driveLikeFile, "export const DriveLike = 1;\n");
 
-  assert.equal(isWindowsAbsolutePath(windowsRoot), true);
-  assert.equal(hasConcatenatedWindowsDrive(concatenated), true);
-  if (process.platform === "win32") {
-    return;
-  }
+    const windowsRoot = String.raw`C:\Users\user\project`;
+    for (const rootPath of [
+      windowsRoot,
+      join(temporaryDirectory, windowsRoot),
+    ]) {
+      assert.throws(
+        () => validateRootPaths([rootPath]),
+        (error) =>
+          error.code === "ZVEC_GREP.ENGINE.SCANNER.ROOT_PATH_INVALID" &&
+          String(error.context).includes(windowsRoot),
+      );
+    }
 
-  assert.equal(normalizePath(windowsRoot), win32.normalize(windowsRoot));
-  assert.equal(normalizePath(windowsRoot).startsWith(posixRoot), false);
-  assert.equal(
-    resolvePath(posixRoot, windowsRoot),
-    win32.normalize(windowsRoot),
-  );
-  assert.equal(resolvePath(posixRoot, windowsRoot).includes(posixRoot), false);
-  assert.equal(isPathInside(posixRoot, concatenated), false);
-  assert.throws(
-    () => validateRootPaths([windowsRoot]),
-    (error) =>
-      error.code === "ZVEC_GREP.ENGINE.SCANNER.ROOT_PATH_INVALID" &&
-      String(error.context).includes(windowsRoot) &&
-      !String(error.context).includes(`${posixRoot}/`),
-  );
-  assert.throws(
-    () => validateRootPaths([concatenated]),
-    (error) =>
-      error.code === "ZVEC_GREP.ENGINE.SCANNER.ROOT_PATH_INVALID" &&
-      String(error.context).includes(concatenated),
-  );
-});
+    assert.deepEqual(validateRootPaths([driveLikeFile]), [
+      { absolutePath: driveLikeFile, recursive: true },
+    ]);
+    assert.equal(normalizePath("C:/x.ts"), resolve("C:/x.ts"));
+    assert.equal(isPathInside(temporaryDirectory, driveLikeFile), true);
+  },
+);
 
 test("file type filters accept extension aliases for ripgrep types", async () => {
   const types = await resolveFileTypePatterns([".h", "cc"], undefined);
