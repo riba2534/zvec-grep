@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
+import { parseArgs } from "../../dist/cli/args.js";
 import { EngineError } from "../../dist/engine/errors.js";
 import { resolveModelArtifacts } from "../../dist/engine/models/artifact-downloader.js";
 import { Model2VecEmbeddingModel } from "../../dist/engine/models/backends/model2vec.js";
@@ -256,6 +264,14 @@ function multiBatchModel2Vec(modelCacheDir, failure) {
     },
   );
   return { model, calls };
+}
+
+function assertSuggestionRebuildsTheIndex(suggestion) {
+  const [binary, ...args] = suggestion.split(" ");
+  assert.equal(binary, "zg");
+  const parsed = parseArgs(args);
+  assert.equal(parsed.command, "index");
+  assert.equal(parsed.options.rebuild, true);
 }
 
 test("service exposes embedding model download progress while indexing", async (t) => {
@@ -990,10 +1006,8 @@ test("workspace status reports failed and unready when storage is missing or uno
     infoMissingFiles.error?.code,
     "ZVEC_GREP.ENGINE.STORAGE.ZVEC_FILE_META_MISSING",
   );
-  assert.equal(
-    infoMissingFiles.suggestion,
-    "re-run zg index (or zg index --rebuild) to rebuild the index",
-  );
+  assert.equal(infoMissingFiles.suggestion, "zg --index --rebuild");
+  assertSuggestionRebuildsTheIndex(infoMissingFiles.suggestion);
 
   const statusMissingFiles = await runCli(
     ["--status", root, "--mode", "direct"],
@@ -1004,10 +1018,7 @@ test("workspace status reports failed and unready when storage is missing or uno
     statusMissingFiles.stdout,
     /ZVEC_GREP\.ENGINE\.STORAGE\.ZVEC_FILE_META_MISSING/,
   );
-  assert.match(
-    statusMissingFiles.stdout,
-    /re-run zg index \(or zg index --rebuild\) to rebuild the index/,
-  );
+  assert.match(statusMissingFiles.stdout, /Next\s+zg --index --rebuild/);
 
   await assert.rejects(
     runCli(["--status", root, "--mode", "direct", "--check-ready"], {
@@ -1031,10 +1042,7 @@ test("workspace status reports failed and unready when storage is missing or uno
     infoUnopenable.error?.code,
     "ZVEC_GREP.ENGINE.STORAGE.ZVEC_OPEN_FAILED",
   );
-  assert.equal(
-    infoUnopenable.suggestion,
-    "re-run zg index (or zg index --rebuild) to rebuild the index",
-  );
+  assert.equal(infoUnopenable.suggestion, "zg --index --rebuild");
 
   const statusUnopenable = await runCli(
     ["--status", root, "--mode", "direct"],
@@ -1045,10 +1053,7 @@ test("workspace status reports failed and unready when storage is missing or uno
     statusUnopenable.stdout,
     /ZVEC_GREP\.ENGINE\.STORAGE\.ZVEC_OPEN_FAILED/,
   );
-  assert.match(
-    statusUnopenable.stdout,
-    /re-run zg index \(or zg index --rebuild\) to rebuild the index/,
-  );
+  assert.match(statusUnopenable.stdout, /Next\s+zg --index --rebuild/);
 
   await assert.rejects(
     runCli(["--status", root, "--mode", "direct", "--check-ready"], {
@@ -1062,6 +1067,75 @@ test("workspace status reports failed and unready when storage is missing or uno
       return true;
     },
   );
+});
+
+test("workspace status reports failed when the manifest path no longer holds the index storage", async (t) => {
+  const temporaryDirectory = await createTemporaryDirectory(
+    t,
+    "zvec-grep-storage-moved-",
+  );
+  const root = join(temporaryDirectory, "repo");
+  const home = join(temporaryDirectory, "home");
+  await mkdir(root, { recursive: true });
+  await writeFile(join(root, "file.ts"), "export const MovedNeedle = 1;\n");
+
+  const indexed = await createZvecGrep({
+    root,
+    home,
+    embeddingModel: new FakeEmbeddingModel(),
+  });
+  await indexed.index();
+  await indexed.close();
+
+  // Moving the workspace leaves manifest.path pointing at the previous home,
+  // which is the storage a query would open.
+  const movedRoot = join(temporaryDirectory, "moved-repo");
+  await rename(root, movedRoot);
+  const manifest = JSON.parse(
+    await readFile(join(movedRoot, ".zvec-grep", "manifest.json"), "utf8"),
+  );
+  assert.notEqual(manifest.path, join(movedRoot, ".zvec-grep"));
+  const staleFilesPath = `path=${join(manifest.path, "files.zvec")}`;
+
+  const service = await createZvecGrep({
+    root: movedRoot,
+    home,
+    embeddingModel: new FakeEmbeddingModel(),
+  });
+  t.after(async () => {
+    await service.close();
+  });
+
+  const lightweight = await service.info({ includeStatus: false });
+  assert.equal(lightweight.indexed, false);
+  assert.equal(lightweight.status, null);
+  assert.equal(
+    lightweight.error?.code,
+    "ZVEC_GREP.ENGINE.STORAGE.ZVEC_FILE_META_MISSING",
+  );
+  assert.equal(lightweight.error?.context, staleFilesPath);
+  assert.equal(lightweight.suggestion, "zg --index --rebuild");
+  assertSuggestionRebuildsTheIndex(lightweight.suggestion);
+
+  const full = await service.info();
+  assert.equal(full.indexed, false);
+  assert.equal(full.status, null);
+  assert.equal(
+    full.error?.code,
+    "ZVEC_GREP.ENGINE.STORAGE.ZVEC_FILE_META_MISSING",
+  );
+  assert.equal(full.error?.context, staleFilesPath);
+  assert.equal(full.suggestion, "zg --index --rebuild");
+
+  const status = await runCli(["--status", movedRoot, "--mode", "direct"], {
+    cwd: movedRoot,
+  });
+  assert.match(status.stdout, /✗ Workspace index failed/);
+  assert.match(
+    status.stdout,
+    /ZVEC_GREP\.ENGINE\.STORAGE\.ZVEC_FILE_META_MISSING/,
+  );
+  assert.match(status.stdout, /Next\s+zg --index --rebuild/);
 });
 
 test("service records failed files, retries them, deletes stale records, and rebuilds", async (t) => {

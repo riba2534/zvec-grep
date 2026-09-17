@@ -79,6 +79,7 @@ const ZVEC_OPEN_RETRY_MAX_DELAY_MS = 1000;
 
 let zvecInitialized = false;
 
+// Opens the collections a query would read without loading file metadata.
 export function probeWorkspaceIndexStorage(storagePath: string): void {
   const paths = resolveWorkspaceIndexStoragePaths(storagePath);
   initializeZvec();
@@ -139,24 +140,29 @@ class ZvecWorkspaceIndexStorage implements WorkspaceIndexStorage {
     }
 
     this.files = new ZvecFileMetaStore(paths.filesPath, readOnly);
-    for (const file of this.files.list()) {
-      this.rememberFile(file);
-    }
+    try {
+      for (const file of this.files.list()) {
+        this.rememberFile(file);
+      }
 
-    const zvecPath = paths.indexPath;
-    if (existsSync(zvecPath)) {
-      this.collection = openZvecCollection(zvecPath, readOnly, "open", () =>
-        ZVecOpen(zvecPath, { readOnly }),
-      );
-    } else if (readOnly) {
-      throw new EngineError("zvec collection storage does not exist", {
-        code: "ZVEC_GREP.ENGINE.STORAGE.ZVEC_COLLECTION_MISSING",
-        context: `path=${zvecPath}`,
-      });
-    } else {
-      this.collection = openZvecCollection(zvecPath, readOnly, "create", () =>
-        ZVecCreateAndOpen(zvecPath, createSchema(options.embedding)),
-      );
+      const zvecPath = paths.indexPath;
+      if (existsSync(zvecPath)) {
+        this.collection = openZvecCollection(zvecPath, readOnly, "open", () =>
+          ZVecOpen(zvecPath, { readOnly }),
+        );
+      } else if (readOnly) {
+        throw new EngineError("zvec collection storage does not exist", {
+          code: "ZVEC_GREP.ENGINE.STORAGE.ZVEC_COLLECTION_MISSING",
+          context: `path=${zvecPath}`,
+        });
+      } else {
+        this.collection = openZvecCollection(zvecPath, readOnly, "create", () =>
+          ZVecCreateAndOpen(zvecPath, createSchema(options.embedding)),
+        );
+      }
+    } catch (error) {
+      this.files.close();
+      throw error;
     }
   }
 

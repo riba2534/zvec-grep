@@ -16,7 +16,6 @@ import {
   indexCompletionFromStatus,
   indexStatusNeedsRefresh as statusNeedsRefresh,
 } from "../../engine/index-status.js";
-import { isWorkspaceIndexed } from "../../engine/service/workspace-index.js";
 import { redactErrorText } from "../../engine/errors.js";
 
 type StatusTheme = {
@@ -106,7 +105,6 @@ type ServerIndexInfo = {
         dimension: number;
         metric: string;
       } | null;
-      index_version?: number | null;
     };
     files?: {
       stored: number;
@@ -545,13 +543,6 @@ function serverIndexState(info: ServerIndexInfo): WorkspaceIndexState {
     return "stale";
   }
   if (info.indexed) return "ready";
-  if (
-    info.persistent.workspace_index?.embedding &&
-    info.persistent.workspace_index?.index_version !== null &&
-    info.persistent.workspace_index?.index_version !== undefined
-  ) {
-    return "failed";
-  }
   return info.index_policy === "undecided" ? "undecided" : "unindexed";
 }
 
@@ -648,7 +639,7 @@ function workspaceState(
   }
 
   if (!info.indexed) {
-    return isWorkspaceIndexed(info.workspaceIndex) ? "failed" : "unindexed";
+    return "unindexed";
   }
 
   if (info.status?.filesFailed && info.status.filesFailed > 0) {

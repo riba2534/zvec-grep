@@ -646,7 +646,7 @@ export class DaemonBackend implements ZvecGrepDaemonBackend {
               dirtyRevision: runtimeSnapshot?.dirtyRevision ?? 0,
               indexedRevision: runtimeSnapshot?.indexedRevision ?? 0,
               activeJobId: job?.id,
-              jobState: job?.state ?? (info.error ? "failed" : undefined),
+              jobState: job?.state,
               progress: job?.progress ? formatProgress(job) : undefined,
               completion: indexCompletionForJob(
                 indexCompletionFromStatus(info.status),

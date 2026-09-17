@@ -1886,8 +1886,7 @@ test("workspace status formatters report failed state with error and rebuild sug
           updatedTime: 1,
         },
         status: null,
-        suggestion:
-          "re-run zg index (or zg index --rebuild) to rebuild the index",
+        suggestion: "zg --index --rebuild",
         error: {
           code: "ZVEC_GREP.ENGINE.STORAGE.ZVEC_FILE_META_MISSING",
           message: "zvec file metadata storage does not exist",
@@ -1906,10 +1905,8 @@ test("workspace status formatters report failed state with error and rebuild sug
     /ZVEC_GREP\.ENGINE\.STORAGE\.ZVEC_FILE_META_MISSING/,
   );
   assert.match(directText, /zvec file metadata storage does not exist/);
-  assert.match(
-    directText,
-    /Next\s+re-run zg index \(or zg index --rebuild\) to rebuild the index/,
-  );
+  assert.match(directText, /Details\s+path: \/repo\/\.zvec-grep\/files\.zvec/);
+  assert.match(directText, /Next\s+zg --index --rebuild/);
 
   const serverOutput = await captureConsole(() => {
     const state = printServerIndexInfo(
@@ -1931,14 +1928,12 @@ test("workspace status formatters report failed state with error and rebuild sug
             },
             index_version: 1,
           },
-          suggestion:
-            "re-run zg index (or zg index --rebuild) to rebuild the index",
+          suggestion: "zg --index --rebuild",
         },
         runtime: {
           watcher_active: false,
           dirty_revision: 0,
           indexed_revision: 0,
-          job_state: "failed",
           error: {
             code: "ZVEC_GREP.ENGINE.STORAGE.ZVEC_FILE_META_MISSING",
             message: "zvec file metadata storage does not exist",
@@ -1956,8 +1951,5 @@ test("workspace status formatters report failed state with error and rebuild sug
     serverText,
     /ZVEC_GREP\.ENGINE\.STORAGE\.ZVEC_FILE_META_MISSING/,
   );
-  assert.match(
-    serverText,
-    /Next\s+re-run zg index \(or zg index --rebuild\) to rebuild the index/,
-  );
+  assert.match(serverText, /Next\s+zg --index --rebuild/);
 });
