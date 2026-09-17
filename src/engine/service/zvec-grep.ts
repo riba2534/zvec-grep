@@ -356,12 +356,17 @@ class ZvecGrepService implements ZvecGrep {
               if (stagingLocation) {
                 try {
                   if (rebuildSucceeded) {
-                    installRebuiltWorkspaceIndex(location, stagingLocation);
-                    writeWorkspaceManifest(location.home, {
-                      ...liveManifest,
-                      embeddingRuntime,
-                      updatedTime: Date.now(),
-                    });
+                    installRebuiltWorkspaceIndex(
+                      location,
+                      stagingLocation,
+                      () => {
+                        writeWorkspaceManifest(location.home, {
+                          ...liveManifest,
+                          embeddingRuntime,
+                          updatedTime: Date.now(),
+                        });
+                      },
+                    );
                   }
                 } finally {
                   discardRebuildStaging(location, stagingLocation);

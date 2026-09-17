@@ -40,6 +40,7 @@ export function deleteWorkspaceIndexStorage(storagePath: string): void {
 export function installWorkspaceIndexStorage(
   liveStoragePath: string,
   stagingStoragePath: string,
+  commit: () => void,
 ): void {
   const live = resolveWorkspaceIndexStoragePaths(liveStoragePath);
   const staging = resolveWorkspaceIndexStoragePaths(stagingStoragePath);
@@ -76,6 +77,7 @@ export function installWorkspaceIndexStorage(
       }
       renameSync(stagingPath, livePath);
     }
+    commit();
   } catch (error) {
     for (let index = backups.length - 1; index >= 0; index--) {
       const { livePath, backup } = backups[index];
@@ -88,7 +90,11 @@ export function installWorkspaceIndexStorage(
   }
 
   for (const { backup } of backups) {
-    rmSync(backup, { recursive: true, force: true });
+    try {
+      rmSync(backup, { recursive: true, force: true });
+    } catch {
+      // The new index is already published, so leftover backups are harmless.
+    }
   }
 }
 

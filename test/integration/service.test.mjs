@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 import { EngineError } from "../../dist/engine/errors.js";
 import { resolveModelArtifacts } from "../../dist/engine/models/artifact-downloader.js";
 import { Model2VecEmbeddingModel } from "../../dist/engine/models/backends/model2vec.js";
+import { installWorkspaceIndexStorage } from "../../dist/engine/storage/index.js";
 import { CURRENT_INDEX_VERSION } from "../../dist/engine/types.js";
 import { createZvecGrep } from "../../dist/index.js";
 import { createTemporaryDirectory } from "../helpers/fixtures.mjs";
@@ -30,6 +38,13 @@ class SelectivelyFailingEmbeddingModel extends FakeEmbeddingModel {
       });
     }
     return super.doEmbed(contents);
+  }
+}
+
+class WideFakeEmbeddingModel extends FakeEmbeddingModel {
+  constructor() {
+    super();
+    this.info = { ...this.info, dimension: 32 };
   }
 }
 
@@ -1131,6 +1146,69 @@ test("rebuild keeps the existing index when indexing fails", async (t) => {
   t.after(() => recovered.close());
   const result = await recovered.context({
     routes: [{ mode: "fts", query: "KeptNeedle" }],
+    autoUpdate: false,
+  });
+  assert.ok(result.items.length > 0);
+});
+
+test("a failed manifest publication keeps the previous index queryable", async (t) => {
+  const temporaryDirectory = await createTemporaryDirectory(
+    t,
+    "zvec-grep-publish-manifest-failure-",
+  );
+  const root = join(temporaryDirectory, "repo");
+  const rebuiltRoot = join(temporaryDirectory, "rebuilt");
+  await mkdir(root, { recursive: true });
+  await mkdir(rebuiltRoot, { recursive: true });
+  await writeFile(join(root, "kept.ts"), "export const KeptNeedle = 1;\n");
+  await writeFile(
+    join(rebuiltRoot, "rebuilt.ts"),
+    "export const RebuiltNeedle = 2;\n",
+  );
+
+  const initial = await createZvecGrep({
+    root,
+    embeddingModel: new FakeEmbeddingModel(),
+  });
+  await initial.index();
+  await initial.close();
+
+  const rebuilt = await createZvecGrep({
+    root: rebuiltRoot,
+    embeddingModel: new WideFakeEmbeddingModel(),
+  });
+  await rebuilt.index();
+  await rebuilt.close();
+
+  const workspaceHome = join(root, ".zvec-grep");
+  assert.throws(
+    () =>
+      installWorkspaceIndexStorage(
+        workspaceHome,
+        join(rebuiltRoot, ".zvec-grep"),
+        () => {
+          throw Object.assign(new Error("manifest rename failed"), {
+            code: "EIO",
+          });
+        },
+      ),
+    /manifest rename failed/,
+  );
+  assert.equal(
+    (await readdir(workspaceHome)).some((entry) => entry.includes(".old.")),
+    false,
+  );
+
+  const recovered = await createZvecGrep({
+    root,
+    embeddingModel: new FakeEmbeddingModel(),
+  });
+  t.after(() => recovered.close());
+  const result = await recovered.context({
+    routes: [
+      { mode: "fts", query: "KeptNeedle" },
+      { mode: "vector", query: "KeptNeedle" },
+    ],
     autoUpdate: false,
   });
   assert.ok(result.items.length > 0);

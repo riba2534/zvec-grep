@@ -62,11 +62,12 @@ export function createRebuildStagingLocation(
 export function installRebuiltWorkspaceIndex(
   location: WorkspaceIndexLocation,
   staging: WorkspaceIndexLocation,
+  publishManifest: () => void,
 ): void {
   if (dirname(staging.home) !== location.home) {
     throw new Error("Rebuild staging must be inside the workspace index home");
   }
-  installWorkspaceIndexStorage(location.home, staging.home);
+  installWorkspaceIndexStorage(location.home, staging.home, publishManifest);
 }
 
 export function discardRebuildStaging(
